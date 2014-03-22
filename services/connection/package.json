@@ -1,0 +1,11 @@
+{
+    "name": "rappt-connection-service",
+    "version": "0.0.1",
+    "private": true,
+    "dependencies": {
+        "bluebird":"1.1.1",
+        "socket.io":"0.9.16",
+        "should": "~2.1.1",
+        "mocha": "~1.16.2"
+    }
+}
