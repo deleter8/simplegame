@@ -103,7 +103,7 @@ Service.prototype.init = function(){
     app.post('/login',
         function(req, res, next) {
             passport.authenticate('local', function(err, user, info) {
-                console.log("auth was called with user: " + user + " err:" + err + " info:" + JSON.stringify(info));
+                console.log("auth was called with user: " + JSON.stringify(user) + " err:" + err + " info:" + JSON.stringify(info));
                 if (err) { return next(err) }
                 if (!user) {
                     req.session.messages =  [info.message];
@@ -130,7 +130,6 @@ Service.prototype.init = function(){
 
     app.get('/user', function(req, res){
         res.setHeader('Content-Type', 'application/json');
-        console.log("Hello?");
         res.writeHead(200);
 
         if (req.isAuthenticated()) {

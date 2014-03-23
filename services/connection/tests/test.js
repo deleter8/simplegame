@@ -17,6 +17,23 @@ describe('Unit Tests', function () {
     var bannedUsername = 'banneduser';
     var bannedUserPassword = 'deservedit';
 
+    var giveLoggedInSession = function(handler){
+        request(url)
+            .post('/login')
+            .send({'username':testUsername, 'password':testUserPassword})
+            .set('Accept', 'application/json')
+            .expect(200)
+            .expect('set-cookie', /connect.sid[.]*/)
+            .end(function(err, res){
+                if (err) return done(err);
+                res.body.should.have.property('success').which.equal(true);
+                res.header.should.have.property('set-cookie');
+                var cookie = res.header['set-cookie'][0];
+                cookie = cookie.substr(0,cookie.indexOf(';'));
+                return handler(cookie)
+            });
+    };
+
     process.env['SESSION_KEY_SECRET'] = "not so secret";
 
     before(function(done) {
@@ -42,11 +59,11 @@ describe('Unit Tests', function () {
                 if (err) return done(err);
                 res.body.should.have.property('username');
                 assert.equal(res.body['username'], null, 'username should be null' );
-                return done()
+                return done();
             });
     });
 
-    it('should not be able to get auth only data when not logged in', function(done){
+    it('should not send auth only data when user not logged in', function(done){
 
         request(url)
             .get('/authonly')
@@ -55,7 +72,7 @@ describe('Unit Tests', function () {
             .end(function(err, res){
                 if (err) return done(err);
                 res.body.should.have.property('info').which.equal('this data requires login');
-                return done()
+                return done();
             })
     });
 
@@ -70,8 +87,62 @@ describe('Unit Tests', function () {
             .end(function(err, res){
                 if (err) return done(err);
                 res.body.should.have.property('success').which.equal(true);
-                return done()
+                return done();
             })
+    });
+
+    it('should send auth only data when user logged in', function(done){
+        giveLoggedInSession(function(cookie){
+            return request(url)
+                .get('/authonly')
+                .set('Accept', 'application/json')
+                .set('Cookie', cookie)
+                .expect(200)
+                .end(function(err, res){
+                    if (err) return done(err);
+                    res.body.should.have.property('exclusive').which.equal('user data only!');
+                    return done();
+                })
+        });
+    });
+
+    it('should send auth only data when user logged in', function(done){
+        giveLoggedInSession(function(cookie){
+            return request(url)
+                .get('/authonly')
+                .set('Accept', 'application/json')
+                .set('Cookie', cookie)
+                .expect(200)
+                .end(function(err, res){
+                    if (err) return done(err);
+                    res.body.should.have.property('exclusive').which.equal('user data only!');
+                    return done();
+                })
+        });
+    });
+
+    it('should delete session and logout when requested', function(done){
+        giveLoggedInSession(function(cookie){
+            return request(url)
+                .get('/logout')
+                .set('Accept', 'application/json')
+                .set('Cookie', cookie)
+                .expect(200)
+                .end(function(err, res){
+                    if (err) return done(err);
+                    res.body.should.have.property('success').which.equal(true);
+                    return request(url)
+                        .get('/authonly')
+                        .set('Accept', 'application/json')
+                        .set('Cookie', cookie)
+                        .expect(401)
+                        .end(function(err, res){
+                            if (err) return done(err);
+                            res.body.should.have.property('info').which.equal('this data requires login');
+                            return done();
+                        })
+                })
+        });
     });
 
     it('should not log in banned credentials', function(done){
@@ -84,7 +155,7 @@ describe('Unit Tests', function () {
             .end(function(err, res){
                 if (err) return done(err);
                 res.body.should.have.property('message').which.equal("This username has been banned");
-                return done()
+                return done();
             })
     });
 
@@ -98,7 +169,7 @@ describe('Unit Tests', function () {
             .end(function(err, res){
                 if (err) return done(err);
                 res.body.should.have.property('message').which.equal("Invalid login");
-                return done()
+                return done();
             })
     });
 
@@ -112,7 +183,7 @@ describe('Unit Tests', function () {
             .end(function(err, res){
                 if (err) return done(err);
                 res.body.should.have.property('message').which.equal("Invalid login");
-                return done()
+                return done();
             })
     });
 
@@ -135,7 +206,7 @@ describe('Unit Tests', function () {
                         .end(function(err, res){
                             if (err) return done(err);
                             res.body.should.eql(badPasswordBody);
-                            return done()
+                            return done();
                         });
             })
     });
