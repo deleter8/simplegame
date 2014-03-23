@@ -76,6 +76,8 @@ Service.prototype.init = function(){
         return res.end(JSON.stringify({'info':'this data requires login'}));
     }
 
+    var sessionStore = null;
+
     app.configure(function() {
         //set up compression
         app.use(express.compress());
@@ -89,8 +91,15 @@ Service.prototype.init = function(){
         //enable put/delete simulation
         app.use(express.methodOverride());
 
-        //enable sessions with secret key
-        app.use(express.session({secret: process.env['SESSION_KEY_SECRET']}));
+        //enable sessions with secret key & keep track of session store
+        sessionStore = new express.session.MemoryStore(); //TODO: Not recommended for production use
+        app.sessionStore = sessionStore;
+        app.use(express.session({
+            'key': 'connect.sid',
+            'store': sessionStore,
+            'cookie': {'path': '/', 'httpOnly': true, maxAge: 60 * 60 * 1000},
+            'secret': process.env['SESSION_KEY_SECRET']
+        }) );
 
         //setup passport
         app.use(passport.initialize());
@@ -102,6 +111,7 @@ Service.prototype.init = function(){
 
     app.post('/login',
         function(req, res, next) {
+            console.log("login was called");
             passport.authenticate('local', function(err, user, info) {
                 console.log("auth was called with user: " + JSON.stringify(user) + " err:" + err + " info:" + JSON.stringify(info));
                 if (err) { return next(err) }
@@ -153,7 +163,57 @@ Service.prototype.init = function(){
         return res.end(JSON.stringify({'success':true}));
     });
 
-//io.sockets.on
+
+
+    io.configure(function () {
+        io.set('authorization', function (handshakeData, callback) {
+            console.log("!!!! IO AUTHORIZATION STUFF!!!");
+
+            var cookie = handshakeData.headers.cookie;
+
+            if(!cookie){
+                return callback(new Error("No cookie transmitted"), false);
+            }
+            var unparsedCookies = cookie.split(';');
+            var cookies = {};
+            for(var i =0;i<unparsedCookies.length;i++){
+                var e = unparsedCookies[i].split('=');
+                cookies[e[0]]=e[1];
+            }
+
+            handshakeData.cookie = cookies;
+            console.log(handshakeData.cookie);
+            handshakeData.sessionId = handshakeData.cookie['connect.sid'];
+
+            if(!handshakeData.sessionId){
+                return callback(new Error("Cookie had no session id"), false);
+            }
+
+            return sessionStore.get(handshakeData.sessionId, function(err, session){
+                if(err){
+                    return callback(err, false);
+                }
+                handshakeData.session = session; //Accept the session
+                return callback(null, true);
+            });
+
+        });
+
+//        io.on('connection', function(socket) {
+//            // reference to my initialized sessionStore in app.js
+//            var sessionStore = config.sessionStore;
+//            var sessionId    = socket.handshake.sessionId;
+//
+//            sessionStore.get(sessionId, function(err, session) {
+//                if( ! err) {
+//                    if(session.passport.user) {
+//                        console.log('This is the users email address %s', session.passport.user);
+//                    }
+//                }});
+//        });
+    });
+
+    //io.sockets.on
     var messageBus;
     messageBus = io.of('/websocket').on('connection', function (socket) {
         socket.emit('a message', {

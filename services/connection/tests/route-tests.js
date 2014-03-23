@@ -4,8 +4,7 @@ var request = require('supertest');
 var serviceUnderTest = require('../connection-service.js').Service;
 var Promise = require("bluebird");
 
-
-describe('Unit Tests', function () {
+describe('Route Tests', function () {
     this.timeout(15 * 1000);
 
     var service = new serviceUnderTest();

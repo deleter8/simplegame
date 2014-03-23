@@ -3,7 +3,7 @@
 <head>
     <title>RaPPT</title>
     <script type="text/javascript" src="http://code.jquery.com/jquery-1.11.0.js"></script>
-    <!--<script type="text/javascript" src="scripts/lib/socket.io/socket.io.js"></script>-->
+    <script type="text/javascript" src="scripts/lib/socket.io/socket.io.js"></script>
     <script type="text/javascript" src="scripts/lib/sammy/sammy.js" ></script>
     <script type="text/javascript" src="scripts/lib/knockout/knockout-3.1.0.min.js"></script>
     <script type="text/javascript" src="scripts/app.js"></script>
@@ -59,6 +59,19 @@
         Logging out...
 
     </div>
+
+    <script type="text/javascript">
+        var messageBus = io.connect('http://localhost/websocket');
+
+        messageBus.on('connect', function () {
+            messageBus.emit('hi!');
+        });
+
+        messageBus.on('a message', function(data){
+            console.log(JSON.stringify(data));
+        });
+    </script>
+
 
 </body>
 </html>
