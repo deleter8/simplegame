@@ -1,34 +1,202 @@
-var server = require('http').createServer(handler);
-var io = require('socket.io').listen(server);
-var fs = require('fs');
+var express = require('express');
+var passport = require('passport');
+var LocalStrategy = require('passport-local').Strategy;
 var Promise = require("bluebird");
+var path = require('path');
+var users = require('./users').users;
 
-function Service(){
-
+function findById(id, fn) {
+    var idx = id - 1;
+    if (users[idx]) {
+        fn(null, users[idx]);
+    } else {
+        fn(new Error('User ' + id + ' does not exist'));
+    }
 }
 
-Service.prototype.start = function(port){
-
-    function handler (req, res) {
-        res.writeHead(404);
-        res.end(null);
+function findByUsername(username, fn) {
+    console.log("trying to find user: " + username);
+    for (var i = 0, len = users.length; i < len; i++) {
+        var user = users[i];
+        if (user.username === username) {
+            return fn(null, user);
+        }
     }
+    return fn(null, null);
+}
 
-    io.sockets.on('connection', function (socket) {
-        //TODO: add socket to list, remove on disconnect. allow adding event listeners after the fact, use promises maybe internally
-        socket.emit('initEvent', { 'data': 'value' });
-        socket.on('secondEvent', function (data) {
-            socket.emit('finalEvent', {'echoData':data, 'data':'finalValue'})
-        });
-        socket.on('disconnect', function(){});
+function Service(){
+    this.app = express();
+    this.server = require('http').createServer(this.app);
+    this.io = require('socket.io').listen(this.server);
+}
+
+Service.prototype.init = function(){
+    var app = this.app;
+    var server = this.server;
+    var io = this.io;
+
+    //setup passport
+    passport.use(new LocalStrategy(
+        function(username, password, done) {
+            process.nextTick(function () {
+
+                // Find the user by username.  If there is no user with the given
+                // username, or the password is not correct, set the user to `false` to
+                // indicate failure and set a flash message.  Otherwise, return the
+                // authenticated `user`.
+                findByUsername(username, function(err, user) {
+                    if (err) { return done(err); }
+                    if (!user || user.password != password) { return done(null, false, { message: 'Invalid login' }); }
+                    console.log("FOUND USER:" + JSON.stringify(user));
+                    if (!!user.banned){ return done(null, false, {message: 'This username has been banned'}); }
+                    return done(null, user);
+                });
+            });
+        }
+    ));
+
+    passport.serializeUser(function(user, done) {
+        if(!!user){
+            return done(null, user.id);
+        }
+        return done(null, null);
     });
 
-    server.listen(port);
+    passport.deserializeUser(function(id, done) {
+        findById(id, function(err, user) {
+            done(err, user);
+        });
+    });
 
+    function ensureAuthenticated(req, res, next) {
+        if (req.isAuthenticated()) { return next(); }
+        res.setHeader('Content-Type', 'application/json');
+        res.writeHead(401);
+        return res.end(JSON.stringify({'info':'this data requires login'}));
+    }
 
-    //new Promise(function (resolve, reject) {
+    app.configure(function() {
+        //set up compression
+        app.use(express.compress());
+
+        //Use logger
+        //app.use(express.logger());
+
+        app.use(express.cookieParser());
+        app.use(express.bodyParser());
+
+        //enable put/delete simulation
+        app.use(express.methodOverride());
+
+        //enable sessions with secret key
+        app.use(express.session({secret: process.env['SESSION_KEY_SECRET']}));
+
+        //setup passport
+        app.use(passport.initialize());
+        app.use(passport.session());
+
+        var oneDay = 86400000;
+        app.use(express.static(path.join(__dirname,  '../../client/')/*, { maxAge: oneDay }*/));
+    });
+
+    app.post('/login',
+        function(req, res, next) {
+            passport.authenticate('local', function(err, user, info) {
+                console.log("auth was called with user: " + user + " err:" + err + " info:" + JSON.stringify(info));
+                if (err) { return next(err) }
+                if (!user) {
+                    req.session.messages =  [info.message];
+                    res.setHeader('Content-Type', 'application/json');
+                    res.writeHead(401);
+                    return res.end(JSON.stringify(info));
+                    //return res.redirect('/#login')
+                }
+                req.logIn(user, function(err) {
+                    if (err) { return next(err); }
+                    res.setHeader('Content-Type', 'application/json');
+                    res.writeHead(200);
+                    return res.end(JSON.stringify({'success':true}));
+                });
+            })(req, res, next);
+        }
+    );
+
+    app.get('/authonly',ensureAuthenticated,function(req, res){
+        res.setHeader('Content-Type', 'application/json');
+        res.writeHead(200);
+        return res.end(JSON.stringify({'exclusive':'user data only!'}));
+    });
+
+    app.get('/user', function(req, res){
+        res.setHeader('Content-Type', 'application/json');
+        console.log("Hello?");
+        res.writeHead(200);
+
+        if (req.isAuthenticated()) {
+            return res.end(JSON.stringify({'username':req.user.username}));
+        }
+
+        return res.end(JSON.stringify({'username':null}));
+    });
+
+    app.get('/logout', function(req, res){
+        try{
+            req.logout();
+        }catch(err){
+            res.setHeader('Content-Type', 'application/json');
+            res.writeHead(500);
+            return res.end(JSON.stringify(err));
+        }
+
+        res.setHeader('Content-Type', 'application/json');
+        res.writeHead(200);
+        return res.end(JSON.stringify({'success':true}));
+    });
+
+//io.sockets.on
+    var messageBus;
+    messageBus = io.of('/websocket').on('connection', function (socket) {
+        socket.emit('a message', {
+            that: 'only'
+            , '/chat': 'will get'
+        });
+        messageBus.emit('a message', {
+            everyone: 'in'
+            , '/chat': 'will get'
+        });
+
+        socket.on('message', function(data){
+
+        });
+        socket.on('disconnect', function(){
+            console.log('disconnect detected')
+        });
+    });
 };
 
+Service.prototype.run = function(port){
+    this.server.listen(port);
+};
+
+Service.prototype.stop = function(){
+    this.server.close();
+};
+
+Service.prototype.addUser = function(username, password, banned){
+    var index = users.length;
+    users.push({ 'id': index, 'username': username, 'password': password, email: username + '@example.com', 'banned':banned });
+};
+
+Service.prototype.setUserBan = function(username, banned){
+    for (var i = 0, len = users.length; i < len; i++) {
+        var user = users[i];
+        if (user.username === username) {
+            user.banned=banned;
+            return;
+        }
+    }
+};
 
 module.exports = {
     'Service':Service
