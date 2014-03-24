@@ -4,6 +4,7 @@ var LocalStrategy = require('passport-local').Strategy;
 var Promise = require("bluebird");
 var path = require('path');
 var users = require('./users').users;
+var rabbit = require('rabbit.js');
 
 function findById(id, fn) {
     var idx = id - 1;
@@ -232,6 +233,19 @@ Service.prototype.init = function(){
             console.log('disconnect detected')
         });
     });
+
+    var context = rabbit.createContext(process.env['RABBIT_URI']);
+    context.on('ready', function() {
+        var pub = context.socket('PUB');
+        var sub = context.socket('SUB');
+        sub.pipe(process.stdout);
+        sub.connect('events', function() {
+            pub.connect('events', function() {
+                pub.write(JSON.stringify({welcome: 'rabbit.js'}), 'utf8');
+            });
+        });
+    });
+
 };
 
 Service.prototype.run = function(port){

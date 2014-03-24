@@ -44,7 +44,6 @@ describe('Socket Tests', function () {
     //end monkeying around
 
     var openSocket = function(){
-
         return new Promise(function(resolve){
             var socket = io.connect(url+'/websocket',{ 'force new connection': true });
             resolve(socket);
@@ -55,7 +54,6 @@ describe('Socket Tests', function () {
         username = username || testUsername;
         password = password || testUserPassword;
         return new Promise(function(resolve, reject){
-
             request(url)
                 .post('/login')
                 .send({'username':username, 'password':password})
@@ -71,7 +69,7 @@ describe('Socket Tests', function () {
                     return resolve();
                 });
         })
-            .then(function(){return openSocket();})
+        .then(function(){return openSocket();})
     };
 
     process.env['SESSION_KEY_SECRET'] = "not so secret";
@@ -90,14 +88,8 @@ describe('Socket Tests', function () {
     });
 
     it('should deny access to websocket if not logged in', function(done){
-
-        console.log("what is going on");
-
-        var disconnected = false;
-
         openSocket()
-            .then(function(messageBus){
-                console.log("here monkey?");
+            .then(function verifyAccessIsDenied(messageBus){
                 messageBus.on('connect', function () {
                     done(new Error("Should not have connected successfully"));
                 });
@@ -107,20 +99,14 @@ describe('Socket Tests', function () {
                 })
             })
             .catch(done);
-
-
     });
 
     it('should allow access to websocket once logged in', function(done){
 
-        console.log("what is going on");
-
         var disconnected = false;
 
-        //var messageBus = io.connect(url+'/websocket');
         logInUserAndOpenSocket(testUsername, testUserPassword)
-            .then(function(messageBus){
-                console.log("here monkey?");
+            .then(function verifySocketIsUpAndFunctional(messageBus){
                 messageBus.on('connect', function () {
                     console.log("WE ARE CONNECTED");
                     messageBus.emit('hi!');
@@ -139,9 +125,6 @@ describe('Socket Tests', function () {
 
                 });
             }).catch(done);
-
-
     });
-
 
 });
