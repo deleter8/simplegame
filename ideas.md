@@ -1,5 +1,8 @@
 #Ideas
-=======
+
+Personal experiment of making raw design ideas public rather than putting this on a private google doc somewhere.
+
+##Current design notes
 
 * Chomps earned when geist collides with pig at rate of 1:1
 * Chomps buy Bacon at a fluctuating rate. 
