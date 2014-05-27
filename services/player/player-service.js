@@ -25,19 +25,38 @@ Service.prototype.run = function(){
             console.log("trying to set up sockets");
             var pub = self.context.socket('PUB');
             var sub = self.context.socket('SUB');
-            //sub.pipe(process.stdout);
-            console.log("sockets setup");
+
             sub.connect('events', function() {
-
-                console.log("subscribe is connected");
                 pub.connect('events', function() {
-                    console.log("publish is connected, sending message");
-                    //pub.write(JSON.stringify({welcome: 'rabbit.js'}), 'utf8');
 
-                    sub.on('data',function(message){
-                        console.log("message recieved: " + message);
+                    sub.on('data',function(data){
+                        var message = '' + data;
                         if(/echo(.)*/.test(message)){
-                            pub.write(message.substr(4), 'utf8');
+                            pub.write(message.substring(4), 'utf8');
+                        }
+
+                    });
+
+                    resolve();
+                });
+            });
+
+            var pubTopics = self.context.socket('PUB');
+            var subTopics = self.context.socket('SUB');
+            console.log("sockets setup");
+
+            pubTopics.options.routing = 'topic';
+            pubTopics.setsockopt('topic', 'critical');
+
+            subTopics.options.routing = 'topic';
+            subTopics.setsockopt('topic', 'critical');
+
+            subTopics.connect('eventtopics', 'critical', function() {
+                pubTopics.connect('eventtopics', function() {
+                    subTopics.on('data',function(data){
+                        var message = '' + data;
+                        if(/echo(.)*/.test(message)){
+                            pubTopics.write(message.substring(4), 'utf8');
                         }
 
                     });
