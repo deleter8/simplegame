@@ -17,12 +17,13 @@ describe('Service Tests', function () {
     var badUserPassword = 'nope';
     var bannedUsername = 'banneduser';
     var bannedUserPassword = 'deservedit';
+    var context = null;
 
     var getContext = new Promise(function(resolve, reject){
-        var context= rabbit.createContext(process.env['RABBIT_URI']);
+        context= rabbit.createContext(process.env['RABBIT_URI']);
 
         context.on('ready', function() {
-            resolve(context);
+            resolve({'context':context});
         });
 
         context.on('err', function(err){
@@ -32,54 +33,84 @@ describe('Service Tests', function () {
     });
 
     var createSocket = function(type, exchange, topic){
-        return getContext
-        .then(function(context){
-                console.log('a');
+        return function(state){
             return new Promise( function(resolve, reject){
-                var socket = context.socket(type);
-                console.log('aa');
+                state[type + 'socket'] = state.context.socket(type);
                 topic = topic || '';
 
-                socket.connect(exchange, topic, function(){
-                    console.log('aaa');
-                    return resolve(socket);
+                state.context.on('error', function(err){
+                    console.log("error" + JSON.stringify(err));
+                    reject(err);
                 });
+
+                var handler = function(){
+                    return resolve(state);
+                };
+
+                if(topic != ''){
+                    state[type+'socket'].options.routing = 'topic';
+                    state[type+'socket'].setsockopt('topic', topic);
+                }
+
+                if(topic != '' && type.substring(0,3).toLowerCase() == 'sub'){
+                    state[type + 'socket'].connect(exchange, topic, handler);
+                }else{
+                    state.topic = topic;
+                    state[type + 'socket'].connect(exchange, handler);
+                }
             });
-        });
+        };
     };
 
     var publishMessage = function(message){
-        return function(socket){
-            console.log('aaaaB');
+        return function(state){
             return new Promise(function(resolve, reject){
-                console.log('aaaaaG');
-                socket.write(message);
-                resolve(socket);
+                state['PUBsocket'].write(message);
+                resolve(state);
             })
         }
     };
 
-    var expectMessage = function(expectedMessage){
-        return function(socket){
-            console.log('a6');
+    var startListeningForMessage = function(expectedMessage){
+        return function(state){
             return new Promise(function(resolve, reject){
-                console.log('a7');
-                socket.on('data', function(receivedMessage){
-                    console.log('a8');
+                state.defer = Promise.pending();
+
+                state['SUBsocket'].on('data', function(receivedMessage){
                     if(expectedMessage instanceof RegExp){
                         if(expectedMessage.test(receivedMessage)){
-                            resolve(socket);
-                            //reject(new Error("received message did not match expected. received: '" + receivedMessage + "' expected: '" + expectedMessage + "'"))
+                            state.defer.fulfill(receivedMessage);
                         }
                     }else{
-                        if(expectedMessage === receivedMessage){
-                            resolve(socket);
-                            //reject(new Error("received message did not match expected. received: '" + receivedMessage + "' expected: '" + expectedMessage + "'"))
+                        if(expectedMessage == receivedMessage){
+                            state.defer.fulfill(receivedMessage);
                         }
                     }
+                });
 
-                    //resolve(socket);
-                })
+                resolve(state);
+            });
+        }
+    };
+
+    var confirmMessageReceived = function(){
+        return function(state){
+            return state.defer.promise.then(function(receivedMessage){});
+        }
+    };
+
+    //this could be done better
+    var confirmMessageNotReceived = function(){
+        return function(state){
+            return new Promise(function(resolve, reject){
+                state.defer.promise
+                    .timeout(1 * 1000)
+                    .then(function(){
+                        reject(new Error("should not have received message"));
+                    })
+                    .catch(Promise.TimeoutError, function() {
+                        resolve();
+                    });
             });
         }
     };
@@ -98,17 +129,46 @@ describe('Service Tests', function () {
 
     //should receive when no topic, should receive on topic, should not receive on other topic or general when pub on topic
     //req/rec (gets when should, doesnt when not)
-    it('should rabbit', function(done){
+    it('should echo message', function(done){
         var message = 'test_message';
 
-        var sub = createSocket('SUB', 'events')
-        .then(expectMessage(message));
+        var promise = getContext
+            .then(createSocket('SUB', 'events'))
+            .then(createSocket('PUB', 'events'))
+            .then(startListeningForMessage(message))
+            .then(publishMessage('echo'+message))
+            .then(confirmMessageReceived());
 
-        var pub = createSocket('PUB', 'events')
-        .then(publishMessage(message));
-
-        Promise.all(pub,sub)
+        promise
         .then(done, done);
+    });
+
+    it('should echo message with topic', function(done){
+        var message = 'test_message';
+
+        var promise = getContext
+            .then(createSocket('SUB', 'eventtopics', 'critical'))
+            .then(createSocket('PUB', 'eventtopics', 'critical'))
+            .then(startListeningForMessage(message))
+            .then(publishMessage('echo'+message))
+            .then(confirmMessageReceived());
+
+        promise
+            .then(done, done);
+    });
+
+    it('should not receive echo when topic does not match', function(done){
+        var message = 'test_message';
+
+        var promise = getContext
+            .then(createSocket('SUB', 'eventtopics', 'critical'))
+            .then(createSocket('PUB', 'eventtopics', 'warning'))
+            .then(startListeningForMessage(message))
+            .then(publishMessage('echo'+message))
+            .then(confirmMessageNotReceived());
+
+        promise
+            .then(done, done);
     });
 
 });
